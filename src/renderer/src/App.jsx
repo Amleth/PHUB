@@ -1,35 +1,47 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useAtom } from 'jotai'
+import { useState } from 'react'
+import Files from './Files'
+import File from './File'
+import Bookmarks from './Bookmarks'
+import { filesAtom } from './store'
+
+const SCREEN_FILES = 0
+const SCREEN_FILE = 1
+const SCREEN_BOOKMARKS = 2
 
 function App() {
-  const ipcHandle = () => window.electron.ipcRenderer.send('ping')
+  const [screen, setScreen] = useState(SCREEN_FILES)
+  const [allFiles, setAllFiles] = useAtom(filesAtom)
+  const [selectedFile, setSelectedFile] = useState()
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
+    <div>
+      <div className="flex">
+        <div
+          className="p-4 select-none"
+          onClick={() => window.electron.ipcRenderer.send('persist-files', allFiles)}
+        >
+          SAVE
         </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
+        <div className="p-4 select-none" onClick={() => setScreen(SCREEN_FILES)}>
+          FILES
+        </div>
+        <div className="p-4 select-none" onClick={() => setScreen(SCREEN_FILE)}>
+          FILE
+        </div>
+        <div className="p-4 select-none" onClick={() => setScreen(SCREEN_BOOKMARKS)}>
+          BOOKMARKS
         </div>
       </div>
-      <Versions></Versions>
-    </>
+      <hr />
+      {screen === SCREEN_BOOKMARKS && <Bookmarks />}
+      {screen === SCREEN_FILES && <div className="p-4"><Files clickCallback={(file) => {
+        setSelectedFile(file)
+        setScreen(SCREEN_FILE)
+      }} /></div>}
+      {screen === SCREEN_FILE && <div className="p-4"><File file={selectedFile} /></div>}
+    </div>
   )
 }
 
 export default App
-

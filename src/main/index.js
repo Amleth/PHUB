@@ -1,8 +1,9 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
+import fs from 'node:fs'
+import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import go from './process_pdf'
+import { go, makeFileData, getMD5 } from './phub_process_pdf'
 
 function createWindow() {
   // Create the browser window.
@@ -13,14 +14,19 @@ function createWindow() {
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      nodeIntegration: true,
+      contextIsolation: false,
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      webviewTag: true
     }
   })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
+
+  mainWindow.webContents.openDevTools({ mode: 'bottom' })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -50,8 +56,43 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  const PHUB = path.join(app.getPath('documents'), 'PHUB')
+  const FROM = path.join(app.getPath('documents'), 'PHUB/in')
+  const TO = path.join(app.getPath('documents'), 'PHUB/pdf')
+  const FILES_JSON = path.join(PHUB, 'files.json')
+  const filesPathsOnDrive = go(PHUB, FROM, TO)
+  const filesMd5OnDrive = filesPathsOnDrive.map(getMD5)
+  if (!fs.existsSync(FILES_JSON)) {
+    fs.writeFileSync(FILES_JSON, JSON.stringify([]))
+  }
+  const filesDataInJson = JSON.parse(fs.readFileSync(FILES_JSON), 'utf8')
+  const filesDataInJsonByMd5 = Object.fromEntries(filesDataInJson.map((x) => [x.md5, x]))
+  const filesData = []
+
+  // Exclude non existing files
+  for (const md5 in filesDataInJsonByMd5) {
+    if (!filesMd5OnDrive.includes(md5)) {
+      delete filesDataInJsonByMd5[md5]
+    }
+  }
+
+  filesPathsOnDrive.map((x) => {
+    const md5 = getMD5(x)
+    // Detect new files
+    if (!(md5 in filesDataInJsonByMd5)) {
+      filesData.push(makeFileData(x, md5))
+    }
+    // Include already declared files
+    else {
+      filesData.push(filesDataInJsonByMd5[md5])
+    }
+  })
+
+  ipcMain.handle('fetch-files', () => filesData)
+
+  ipcMain.on('persist-files', (event, payload) => {
+    fs.writeFileSync(FILES_JSON, JSON.stringify(payload))
+  })
 
   createWindow()
 
@@ -70,8 +111,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app"s specific main process
-// code. You can also put them in separate files and require them here.
-
-go()
